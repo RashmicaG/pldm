@@ -177,7 +177,7 @@ class Request final : public RequestRetryTimer
         {
             pldm::utils::printBuffer(pldm::utils::Tx, requestMsg);
         }
-
+//should be able to get rid of this buf resizing
         if (currentSendbuffSize >= 0 &&
             (size_t)currentSendbuffSize < requestMsg.size())
         {
