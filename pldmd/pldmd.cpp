@@ -180,6 +180,7 @@ int main(int argc, char** argv)
         std::cerr << "Failed to create the socket, RC= " << returnCode << "\n";
         exit(EXIT_FAILURE);
     }
+    std::cerr << "MCTP socket with fd= " << sockfd << "\n";
     socklen_t optlen;
     int currentSendbuffSize;
 

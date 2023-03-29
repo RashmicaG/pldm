@@ -80,27 +80,45 @@ void MctpDiscovery::dicoverEndpoints(sdbusplus::message_t& msg)
 
     for (const auto& [intfName, properties] : interfaces)
     {
+        std::cout << "intface name " << intfName << std::endl;
         if (intfName == mctpEndpointIntfName)
         {
             if (properties.contains("EID") &&
                 properties.contains("SupportedMessageTypes"))
             {
-                auto eid = std::get<size_t>(properties.at("EID"));
+//                auto eid = std::get<size_t>(properties.at("EID")); // this causes the variant bug
+                auto eid = std::get_if<size_t>(&properties.at("EID"));
+		if (eid) {
+        		std::cout << "eid (size_t)" << eid << std::endl;
+		}
+		else if (auto eid = std::get_if<int>(&properties.at("EID"))) {
+        		std::cout << "eid (int)" << eid << std::endl;
+		}
+		else if (auto eid = std::get_if<uint8_t>(&properties.at("EID"))) {
+        		std::cout << "eid (uint8_t)" << eid << std::endl;
+		}
+		else {
+        		std::cout << "couldn't get eid " << std::endl;
+		}
                 auto types = std::get<std::vector<uint8_t>>(
                     properties.at("SupportedMessageTypes"));
+        	std::cout << "got types " << std::endl;
                 if (std::find(types.begin(), types.end(), mctpTypePLDM) !=
                     types.end())
                 {
-                    eids.emplace_back(eid);
+                    eids.emplace_back(*eid);
                 }
             }
         }
     }
 
+    std::cout << "parsed message " << std::endl;
     if (eids.size() && fwManager)
     {
         fwManager->handleMCTPEndpoints(eids);
     }
+        std::cout << "discoverEndpoints - END " << std::endl;
+
 }
 
 } // namespace pldm
