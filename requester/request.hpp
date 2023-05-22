@@ -2,6 +2,7 @@
 
 #include "libpldm/base.h"
 #include "libpldm/pldm.h"
+#include <libpldm/transport.h>
 
 #include "common/flight_recorder.hpp"
 #include "common/types.hpp"
@@ -142,7 +143,8 @@ class Request final : public RequestRetryTimer
 
     /** @brief Constructor
      *
-     *  @param[in] fd - fd of the MCTP communication socket
+     *  @param[in] fd - fd of the PLDM communication socket
+     *  @param[in] pldm_transport - PLDM transport object
      *  @param[in] eid - endpoint ID of the remote MCTP endpoint
      *  @param[in] event - reference to PLDM daemon's main event loop
      *  @param[in] requestMsg - PLDM request message
@@ -151,19 +153,22 @@ class Request final : public RequestRetryTimer
      *  @param[in] currrentSendbuffSize - the current send buffer size
      *  @param[in] verbose - verbose tracing flag
      */
-    explicit Request(int fd, mctp_eid_t eid, sdeventplus::Event& event,
+    explicit Request(int fd, struct pldm_transport& pldmTransport,
+                     mctp_eid_t eid, sdeventplus::Event& event,
                      pldm::Request&& requestMsg, uint8_t numRetries,
                      std::chrono::milliseconds timeout,
                      size_t currentSendbuffSize, bool verbose) :
         RequestRetryTimer(event, numRetries, timeout),
-        fd(fd), eid(eid), requestMsg(std::move(requestMsg)),
+        fd(fd), pldmTransport(pldmTransport), eid(eid),
+        requestMsg(std::move(requestMsg)),
         currentSendbuffSize(currentSendbuffSize), verbose(verbose)
     {}
 
   private:
-    int fd;                   //!< file descriptor of MCTP communications socket
-    mctp_eid_t eid;           //!< endpoint ID of the remote MCTP endpoint
-    pldm::Request requestMsg; //!< PLDM request message
+    int fd; //!< file descriptor of PLDM communications socket
+    pldm_transport& pldmTransport; //!< PLDM transport
+    mctp_eid_t eid;                //!< endpoint ID of the remote MCTP endpoint
+    pldm::Request requestMsg;      //!< PLDM request message
     mutable int currentSendbuffSize; //!< current Send Buffer size
     bool verbose;                    //!< verbose tracing flag
 
@@ -198,7 +203,14 @@ class Request final : public RequestRetryTimer
         }
         pldm::flightrecorder::FlightRecorder::GetInstance().saveRecord(
             requestMsg, true);
-        auto rc = pldm_send(eid, fd, requestMsg.data(), requestMsg.size());
+       const struct pldm_msg_hdr *hdr = (struct pldm_msg_hdr *)(requestMsg.data());
+       if (!hdr->request) {
+               return PLDM_REQUESTER_NOT_REQ_MSG;
+       }
+
+
+        //auto rc = pldm_send(eid, fd, requestMsg.data(), requestMsg.size());
+	auto rc = pldm_transport_send_msg(&pldmTransport, static_cast<uint8_t>(eid), requestMsg.data(), requestMsg.size());
         if (rc < 0)
         {
             std::cerr << "Failed to send PLDM message. RC = " << rc

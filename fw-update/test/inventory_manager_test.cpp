@@ -5,6 +5,8 @@
 #include "requester/test/mock_request.hpp"
 #include "test/test_instance_id.hpp"
 
+#include <libpldm/transport.h>
+
 #include <gtest/gtest.h>
 
 using namespace pldm;
@@ -16,13 +18,14 @@ class InventoryManagerTest : public testing::Test
   protected:
     InventoryManagerTest() :
         event(sdeventplus::Event::get_default()), instanceIdDb(),
-        reqHandler(fd, event, instanceIdDb, false, 90000, seconds(1), 2,
-                   milliseconds(100)),
+        reqHandler(fd, pldmTransport, event, instanceIdDb, false, 90000,
+                   seconds(1), 2, milliseconds(100)),
         inventoryManager(reqHandler, instanceIdDb, outDescriptorMap,
                          outComponentInfoMap)
     {}
 
     int fd = -1;
+    pldm_transport pldmTransport;
     sdeventplus::Event event;
     TestInstanceIdDb instanceIdDb;
     requester::Handler<requester::Request> reqHandler;
