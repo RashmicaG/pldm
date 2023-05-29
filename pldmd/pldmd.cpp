@@ -355,22 +355,19 @@ int main(int argc, char** argv)
         std::make_unique<MctpDiscovery>(bus, fwManager.get());
 int first = 1;
     auto callback = [verbose, &invoker, &reqHandler,
-                     &fwManager, pldmTransport, TID, first](IO& io, int fd, uint32_t revents) mutable {
+                     &fwManager, pldmTransport, TID, first](IO& io, int fd,  uint32_t revents) mutable {
         if (!(revents & EPOLLIN))
         {
             return;
         }
-
-        // Outgoing message.
-        //struct iovec iov[2]{};
-
-        // This structure contains the parameter information for the response
-        // message.
-        //struct msghdr msg
-        //{};
+        if (fd < 0)
+        {
+            return;
+        }
 
         int returnCode = 0;
-        ssize_t peekedLength = recv(fd, nullptr, 0, MSG_PEEK | MSG_TRUNC);
+// equiv might be if rc PLDM_REQUESTER_RECV_FAIL?
+/*        ssize_t peekedLength = recv(fd, nullptr, 0, MSG_PEEK | MSG_TRUNC);
         if (0 == peekedLength)
         {
             // MCTP daemon has closed the socket this daemon is connected to.
@@ -386,82 +383,58 @@ int first = 1;
             std::cerr << "recv system call failed, RC= " << returnCode << "\n";
         }
         else
+        {*/
+        uint8_t *requestMsg;
+
+
+        size_t recvDataLength;
+        returnCode = pldm_transport_recv_msg(pldmTransport, &TID, reinterpret_cast<void**>(&requestMsg), &recvDataLength);
+	if (first)
+              std::cerr << "got TID " << (unsigned int)TID << "\n";
+	first = 0;
+
+        if (returnCode == PLDM_REQUESTER_SUCCESS)
         {
             uint8_t *requestMsg;
 
-            size_t recvDataLength;
-            returnCode = pldm_transport_recv_msg(pldmTransport, &TID, reinterpret_cast<void**>(&requestMsg), &recvDataLength);
-		if (first)
-                        std::cerr << "got TID " << (unsigned int)TID << "\n";
-		first = 0;
-
-            if (returnCode == PLDM_REQUESTER_SUCCESS)
+	    std::vector<uint8_t> requestMsgVec(requestMsg, requestMsg + recvDataLength);
+            FlightRecorder::GetInstance().saveRecord(requestMsgVec, false);
+            if (verbose)
             {
-		std::vector<uint8_t> requestMsgVec(requestMsg, requestMsg + recvDataLength);
-                FlightRecorder::GetInstance().saveRecord(requestMsgVec, false);
+                printBuffer(Rx, requestMsgVec);
+            }
+            // process message and send response
+            auto response = processRxMsg(requestMsgVec, invoker,
+                                         reqHandler, fwManager.get(), TID);
+            if (response.has_value())
+            {
+                FlightRecorder::GetInstance().saveRecord(*response,
+                                                         true);
                 if (verbose)
                 {
-                    printBuffer(Rx, requestMsgVec);
+                    printBuffer(Tx, *response);
                 }
-/*            auto recvDataLength = recv(
-                fd, static_cast<void*>(requestMsg.data()), peekedLength, 0);
-            if (recvDataLength == peekedLength)
-            {
-                FlightRecorder::GetInstance().saveRecord(requestMsg, false);
-                if (verbose)
-                {
-                    printBuffer(Rx, requestMsg);
-                }
-*/
-                {
-                    // process message and send response
-                    auto response = processRxMsg(requestMsgVec, invoker,
-                                                 reqHandler, fwManager.get(), TID);
-                    if (response.has_value())
-                    {
-                        FlightRecorder::GetInstance().saveRecord(*response,
-                                                                 true);
-                        if (verbose)
-                        {
-                            printBuffer(Tx, *response);
-                        }
 
-                        if (currentSendbuffSize >= 0 &&
-                            (size_t)currentSendbuffSize < (*response).size())
-                        {
-                            int oldBuffSize = currentSendbuffSize;
-                            currentSendbuffSize = (*response).size();
-                            int res = setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
-                                                 &currentSendbuffSize,
-                                                 sizeof(currentSendbuffSize));
-                            if (res == -1)
-                            {
-                                std::cerr
-                                    << "Responder : Failed to set the new send buffer size [bytes] : "
-                                    << currentSendbuffSize
-                                    << " from current size [bytes] : "
-                                    << oldBuffSize
-                                    << ", Error : " << strerror(errno)
-                                    << std::endl;
-                                return;
-                            }
-                        }
-                        int returnCode = pldm_transport_send_msg(pldmTransport, TID, (*response).data(), (*response).size());
-                        if (returnCode != PLDM_REQUESTER_SUCCESS)
-                        {
-                            std::cerr << "## pldm transport send failed, RC= "
-                                      << returnCode << "\n";
-                        } 
-                    }
+                returnCode = pldm_transport_send_msg(pldmTransport, TID, (*response).data(), (*response).size());
+                if (returnCode != PLDM_REQUESTER_SUCCESS)
+                {
+                    std::cerr << "## sendto system call failed, RC= "
+                              << returnCode << "\n";
+                }
                 }
             }
-            else
-            {
-                std::cerr
-                    << "## Failure to recv message. TID= " << (unsigned int)TID << " peekedLength= "
-                    << peekedLength << " recvDataLength=" << recvDataLength << " return code " <<returnCode
-                    << "\n";
-            }
+        }
+// equiv might be if rc PLDM_REQUESTER_RECV_FAIL?
+        else if(returnCode == PLDM_REQUESTER_RECV_FAIL) 
+        {
+		std::cerr << "io eixiting \n";
+            io.get_event().exit(0);
+        }
+        else
+        {
+            std::cerr
+                << "Failure to read packet. rc=" << returnCode << " recvDataLength="
+                << recvDataLength << "\n";
         }
     };
 
