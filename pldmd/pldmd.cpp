@@ -90,14 +90,14 @@ void interruptFlightRecorderCallBack(Signal& /*signal*/,
 static std::optional<Response>
     processRxMsg(const std::vector<uint8_t>& requestMsg, Invoker& invoker,
                  requester::Handler<requester::Request>& handler,
-                 fw_update::Manager* fwManager)
+                 fw_update::Manager* fwManager, pldm_tid_t tid)
 {
-    using type = uint8_t;
-    uint8_t eid = requestMsg[0];
+    //using type = uint8_t;
+    uint8_t eid = tid;
 
     pldm_header_info hdrFields{};
     auto hdr = reinterpret_cast<const pldm_msg_hdr*>(
-        requestMsg.data() + sizeof(eid) + sizeof(type));
+        requestMsg.data());// + sizeof(eid) + sizeof(type));
     if (PLDM_SUCCESS != unpack_pldm_header(hdr, &hdrFields))
     {
         std::cerr << "Empty PLDM request header \n";
@@ -108,8 +108,7 @@ static std::optional<Response>
     {
         Response response;
         auto request = reinterpret_cast<const pldm_msg*>(hdr);
-        size_t requestLen = requestMsg.size() - sizeof(struct pldm_msg_hdr) -
-                            sizeof(eid) - sizeof(type);
+        size_t requestLen = requestMsg.size() - sizeof(struct pldm_msg_hdr);
         try
         {
             if (hdrFields.pldm_type != PLDM_FWUP)
@@ -146,8 +145,7 @@ static std::optional<Response>
     else if (PLDM_RESPONSE == hdrFields.msg_type)
     {
         auto response = reinterpret_cast<const pldm_msg*>(hdr);
-        size_t responseLen = requestMsg.size() - sizeof(struct pldm_msg_hdr) -
-                             sizeof(eid) - sizeof(type);
+        size_t responseLen = requestMsg.size() - sizeof(struct pldm_msg_hdr);
         handler.handleResponse(eid, hdrFields.instance, hdrFields.pldm_type,
                                hdrFields.command, response, responseLen);
     }
@@ -369,9 +367,9 @@ int main(int argc, char** argv)
         std::make_unique<fw_update::Manager>(event, reqHandler, instanceIdDb);
     std::unique_ptr<MctpDiscovery> mctpDiscoveryHandler =
         std::make_unique<MctpDiscovery>(bus, fwManager.get());
-
+int first = 1;
     auto callback = [verbose, &invoker, &reqHandler, currentSendbuffSize,
-                     &fwManager](IO& io, int fd, uint32_t revents) mutable {
+                     &fwManager, pldmTransport, TID, first](IO& io, int fd, uint32_t revents) mutable {
         if (!(revents & EPOLLIN))
         {
             return;
@@ -403,8 +401,25 @@ int main(int argc, char** argv)
         }
         else
         {
-            std::vector<uint8_t> requestMsg(peekedLength);
-            auto recvDataLength = recv(
+            uint8_t *requestMsg;
+
+
+            size_t recvDataLength;
+            returnCode = pldm_transport_recv_msg(pldmTransport, &TID, reinterpret_cast<void**>(&requestMsg), &recvDataLength);
+		if (first)
+                        std::cerr << "got TID " << (unsigned int)TID << "\n";
+		first = 0;
+
+            if (returnCode == PLDM_REQUESTER_SUCCESS)
+            {
+		std::vector<uint8_t> requestMsgVec(requestMsg, requestMsg + recvDataLength);
+	//	std::cerr << "requestMsgVec size" << requestMsgVec.size() << ", peeked length:" << peekedLength << "\n";
+                FlightRecorder::GetInstance().saveRecord(requestMsgVec, false);
+                if (verbose)
+                {
+                    printBuffer(Rx, requestMsgVec);
+                }
+/*            auto recvDataLength = recv(
                 fd, static_cast<void*>(requestMsg.data()), peekedLength, 0);
             if (recvDataLength == peekedLength)
             {
@@ -413,18 +428,11 @@ int main(int argc, char** argv)
                 {
                     printBuffer(Rx, requestMsg);
                 }
-
-                if (MCTP_MSG_TYPE_PLDM != requestMsg[1])
-                {
-                    // Skip this message and continue.
-                    std::cerr << "Encountered Non-PLDM type message"
-                              << "\n";
-                }
-                else
+*/
                 {
                     // process message and send response
-                    auto response = processRxMsg(requestMsg, invoker,
-                                                 reqHandler, fwManager.get());
+                    auto response = processRxMsg(requestMsgVec, invoker,
+                                                 reqHandler, fwManager.get(), TID);
                     if (response.has_value())
                     {
                         FlightRecorder::GetInstance().saveRecord(*response,
@@ -434,9 +442,14 @@ int main(int argc, char** argv)
                             printBuffer(Tx, *response);
                         }
 
-                        iov[0].iov_base = &requestMsg[0];
-                        iov[0].iov_len = sizeof(requestMsg[0]) +
-                                         sizeof(requestMsg[1]);
+			std::vector<uint8_t> tmp(2);
+			tmp[0] = TID;
+			tmp[1] = 1;//MCTP_MSG_TYPE_PLDM
+                        iov[0].iov_base = (void*)&tmp[0];
+			//iov[0].iov_base = &requestMsg[0];
+			//uint8_t eid = requestMsg[0];
+                        iov[0].iov_len = 2*sizeof(uint8_t);
+//                            sizeof(requestMsg[0]) + sizeof(requestMsg[1]);
                         iov[1].iov_base = (*response).data();
                         iov[1].iov_len = (*response).size();
 
@@ -462,26 +475,29 @@ int main(int argc, char** argv)
                                 return;
                             }
                         }
-
+                        //int result = pldm_transport_send_msg(pldmTransport, TID, (*response).data(), (*response).size());
+                        errno = 0;
                         int result = sendmsg(fd, &msg, 0);
                         if (-1 == result)
                         {
                             returnCode = -errno;
-                            std::cerr << "sendto system call failed, RC= "
+                            std::cerr << "## sendto system call failed, RC= " << result << " errno="
                                       << returnCode << "\n";
-                        }
+                        } 
                     }
                 }
             }
             else
             {
                 std::cerr
-                    << "Failure to read peeked length packet. peekedLength= "
-                    << peekedLength << " recvDataLength=" << recvDataLength
+                    << "## Failure to recv message. TID= " << (unsigned int)TID << " peekedLength= "
+                    << peekedLength << " recvDataLength=" << recvDataLength << " return code " <<returnCode
                     << "\n";
             }
         }
     };
+
+//    pldm::utils::CustomFD socketFd(sockfd);
 
     bus.attach_event(event.get(), SD_EVENT_PRIORITY_NORMAL);
     bus.request_name("xyz.openbmc_project.PLDM");

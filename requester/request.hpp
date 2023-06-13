@@ -208,12 +208,10 @@ class Request final : public RequestRetryTimer
                return PLDM_REQUESTER_NOT_REQ_MSG;
        }
 
-
-        //auto rc = pldm_send(eid, fd, requestMsg.data(), requestMsg.size());
 	auto rc = pldm_transport_send_msg(&pldmTransport, static_cast<uint8_t>(eid), requestMsg.data(), requestMsg.size());
         if (rc < 0)
         {
-            std::cerr << "Failed to send PLDM message. RC = " << rc
+            std::cerr << "## Failed to send PLDM message. RC = " << rc
                       << ", errno = " << errno << "\n";
             return PLDM_ERROR;
         }
