@@ -234,9 +234,8 @@ int main(int argc, char** argv)
 
     Invoker invoker{};
     pldm_transport *pldmTransport = pldm_transport_mctp_demux_core(mctp_demux);
-    requester::Handler<requester::Request> reqHandler( sockfd,
-        *pldmTransport, event, instanceIdDb, currentSendbuffSize,
-        verbose);
+    requester::Handler<requester::Request> reqHandler(
+        *pldmTransport, event, instanceIdDb, verbose);
 
 #ifdef LIBPLDMRESPONDER
     using namespace pldm::state_sensor;
@@ -350,24 +349,12 @@ int main(int argc, char** argv)
 
 #endif
 
-    pldm::utils::CustomFD socketFd(sockfd);
-
-    int result = write(socketFd(), &MCTP_MSG_TYPE_PLDM,
-                       sizeof(MCTP_MSG_TYPE_PLDM));
-    if (-1 == result)
-    {
-        returnCode = -errno;
-        std::cerr << "Failed to send message type as pldm to mctp, RC= "
-                  << returnCode << "\n";
-        exit(EXIT_FAILURE);
-    }
-
     std::unique_ptr<fw_update::Manager> fwManager =
         std::make_unique<fw_update::Manager>(event, reqHandler, instanceIdDb);
     std::unique_ptr<MctpDiscovery> mctpDiscoveryHandler =
         std::make_unique<MctpDiscovery>(bus, fwManager.get());
 int first = 1;
-    auto callback = [verbose, &invoker, &reqHandler, currentSendbuffSize,
+    auto callback = [verbose, &invoker, &reqHandler,
                      &fwManager, pldmTransport, TID, first](IO& io, int fd, uint32_t revents) mutable {
         if (!(revents & EPOLLIN))
         {
@@ -478,7 +465,7 @@ int first = 1;
         }
     };
 
-//    pldm::utils::CustomFD socketFd(sockfd);
+    pldm::utils::CustomFD socketFd(sockfd);
 
     bus.attach_event(event.get(), SD_EVENT_PRIORITY_NORMAL);
     bus.request_name("xyz.openbmc_project.PLDM");

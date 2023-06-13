@@ -143,33 +143,29 @@ class Request final : public RequestRetryTimer
 
     /** @brief Constructor
      *
-     *  @param[in] fd - fd of the PLDM communication socket
      *  @param[in] pldm_transport - PLDM transport object
      *  @param[in] eid - endpoint ID of the remote MCTP endpoint
      *  @param[in] event - reference to PLDM daemon's main event loop
      *  @param[in] requestMsg - PLDM request message
      *  @param[in] numRetries - number of request retries
      *  @param[in] timeout - time to wait between each retry in milliseconds
-     *  @param[in] currrentSendbuffSize - the current send buffer size
      *  @param[in] verbose - verbose tracing flag
      */
-    explicit Request(int fd, struct pldm_transport& pldmTransport,
+    explicit Request(struct pldm_transport& pldmTransport,
                      mctp_eid_t eid, sdeventplus::Event& event,
                      pldm::Request&& requestMsg, uint8_t numRetries,
                      std::chrono::milliseconds timeout,
-                     size_t currentSendbuffSize, bool verbose) :
+                     bool verbose) :
         RequestRetryTimer(event, numRetries, timeout),
-        fd(fd), pldmTransport(pldmTransport), eid(eid),
+        pldmTransport(pldmTransport), eid(eid),
         requestMsg(std::move(requestMsg)),
-        currentSendbuffSize(currentSendbuffSize), verbose(verbose)
+        verbose(verbose)
     {}
 
   private:
-    int fd; //!< file descriptor of PLDM communications socket
     pldm_transport& pldmTransport; //!< PLDM transport
     mctp_eid_t eid;                //!< endpoint ID of the remote MCTP endpoint
     pldm::Request requestMsg;      //!< PLDM request message
-    mutable int currentSendbuffSize; //!< current Send Buffer size
     bool verbose;                    //!< verbose tracing flag
 
     /** @brief Sends the PLDM request message on the socket
@@ -181,25 +177,6 @@ class Request final : public RequestRetryTimer
         if (verbose)
         {
             pldm::utils::printBuffer(pldm::utils::Tx, requestMsg);
-        }
-
-        if (currentSendbuffSize >= 0 &&
-            (size_t)currentSendbuffSize < requestMsg.size())
-        {
-            size_t oldSendbuffSize = currentSendbuffSize;
-            currentSendbuffSize = requestMsg.size();
-            int res = setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
-                                 &currentSendbuffSize,
-                                 sizeof(currentSendbuffSize));
-            if (res == -1)
-            {
-                std::cerr
-                    << "Requester : Failed to set the new send buffer size [bytes] : "
-                    << currentSendbuffSize
-                    << " from current size [bytes]: " << oldSendbuffSize
-                    << " , Error : " << strerror(errno) << std::endl;
-                return PLDM_ERROR;
-            }
         }
         pldm::flightrecorder::FlightRecorder::GetInstance().saveRecord(
             requestMsg, true);
