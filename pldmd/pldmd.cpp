@@ -92,12 +92,11 @@ static std::optional<Response>
                  requester::Handler<requester::Request>& handler,
                  fw_update::Manager* fwManager, pldm_tid_t tid)
 {
-    //using type = uint8_t;
     uint8_t eid = tid;
 
     pldm_header_info hdrFields{};
     auto hdr = reinterpret_cast<const pldm_msg_hdr*>(
-        requestMsg.data());// + sizeof(eid) + sizeof(type));
+        requestMsg.data());
     if (PLDM_SUCCESS != unpack_pldm_header(hdr, &hdrFields))
     {
         std::cerr << "Empty PLDM request header \n";
@@ -403,7 +402,6 @@ int first = 1;
         {
             uint8_t *requestMsg;
 
-
             size_t recvDataLength;
             returnCode = pldm_transport_recv_msg(pldmTransport, &TID, reinterpret_cast<void**>(&requestMsg), &recvDataLength);
 		if (first)
@@ -413,7 +411,6 @@ int first = 1;
             if (returnCode == PLDM_REQUESTER_SUCCESS)
             {
 		std::vector<uint8_t> requestMsgVec(requestMsg, requestMsg + recvDataLength);
-	//	std::cerr << "requestMsgVec size" << requestMsgVec.size() << ", peeked length:" << peekedLength << "\n";
                 FlightRecorder::GetInstance().saveRecord(requestMsgVec, false);
                 if (verbose)
                 {
