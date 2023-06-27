@@ -376,12 +376,12 @@ int first = 1;
         }
 
         // Outgoing message.
-        struct iovec iov[2]{};
+        //struct iovec iov[2]{};
 
         // This structure contains the parameter information for the response
         // message.
-        struct msghdr msg
-        {};
+        //struct msghdr msg
+        //{};
 
         int returnCode = 0;
         ssize_t peekedLength = recv(fd, nullptr, 0, MSG_PEEK | MSG_TRUNC);
@@ -442,19 +442,6 @@ int first = 1;
                             printBuffer(Tx, *response);
                         }
 
-			std::vector<uint8_t> tmp(2);
-			tmp[0] = TID;
-			tmp[1] = 1;//MCTP_MSG_TYPE_PLDM
-                        iov[0].iov_base = (void*)&tmp[0];
-			//iov[0].iov_base = &requestMsg[0];
-			//uint8_t eid = requestMsg[0];
-                        iov[0].iov_len = 2*sizeof(uint8_t);
-//                            sizeof(requestMsg[0]) + sizeof(requestMsg[1]);
-                        iov[1].iov_base = (*response).data();
-                        iov[1].iov_len = (*response).size();
-
-                        msg.msg_iov = iov;
-                        msg.msg_iovlen = sizeof(iov) / sizeof(iov[0]);
                         if (currentSendbuffSize >= 0 &&
                             (size_t)currentSendbuffSize < (*response).size())
                         {
@@ -475,13 +462,10 @@ int first = 1;
                                 return;
                             }
                         }
-                        //int result = pldm_transport_send_msg(pldmTransport, TID, (*response).data(), (*response).size());
-                        errno = 0;
-                        int result = sendmsg(fd, &msg, 0);
-                        if (-1 == result)
+                        int returnCode = pldm_transport_send_msg(pldmTransport, TID, (*response).data(), (*response).size());
+                        if (returnCode != PLDM_REQUESTER_SUCCESS)
                         {
-                            returnCode = -errno;
-                            std::cerr << "## sendto system call failed, RC= " << result << " errno="
+                            std::cerr << "## pldm transport send failed, RC= "
                                       << returnCode << "\n";
                         } 
                     }
