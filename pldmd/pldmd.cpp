@@ -236,9 +236,9 @@ int main(int argc, char** argv)
                                     instanceIdDb);
 
     Invoker invoker{};
-    pldm_transport& pldmTransport = *pldm_transport_mctp_demux_core(mctp_demux);
-    requester::Handler<requester::Request> reqHandler(
-        sockfd, pldmTransport, event, instanceIdDb, currentSendbuffSize,
+    pldm_transport *pldmTransport = pldm_transport_mctp_demux_core(mctp_demux);
+    requester::Handler<requester::Request> reqHandler( sockfd,
+        *pldmTransport, event, instanceIdDb, currentSendbuffSize,
         verbose);
 
 #ifdef LIBPLDMRESPONDER
